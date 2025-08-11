@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL Boilerplate</title>
+    <title>WebGL Falling Fingers</title>
     <style>
         body { margin: 0; background: #222; }
         canvas { display: block; margin: 0 auto; background: #111; }
@@ -24,17 +24,28 @@
         gl.clearColor(0.1, 0.1, 0.1, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // Boilerplate for a simple triangle
+        // Texture image URL (local file)
+        const emojiUrl = "middle-finger.png";
+        let emojiTexture = null;
+        let textureLoaded = false;
+
+        // Vertex shader for textured quad
         const vertexShaderSource = `
             attribute vec2 aPosition;
+            attribute vec2 aTexCoord;
+            varying vec2 vTexCoord;
             void main() {
                 gl_Position = vec4(aPosition, 0.0, 1.0);
+                vTexCoord = aTexCoord;
             }
         `;
+        // Fragment shader for texture
         const fragmentShaderSource = `
             precision mediump float;
+            varying vec2 vTexCoord;
+            uniform sampler2D uTexture;
             void main() {
-                gl_FragColor = vec4(0.2, 0.7, 1.0, 1.0);
+                gl_FragColor = texture2D(uTexture, vTexCoord);
             }
         `;
 
@@ -62,22 +73,119 @@
         }
         gl.useProgram(program);
 
-        // Triangle vertices
-        const vertices = new Float32Array([
-            0.0,  0.5,
-           -0.5, -0.5,
-            0.5, -0.5
+        // Quad geometry (centered at 0,0, size 0.2x0.2)
+        const quadVertices = new Float32Array([
+            // x, y,   u, v
+            -0.1, -0.1, 0, 0,
+             0.1, -0.1, 1, 0,
+             0.1,  0.1, 1, 1,
+            -0.1, -0.1, 0, 0,
+             0.1,  0.1, 1, 1,
+            -0.1,  0.1, 0, 1
         ]);
+
+        // Set up buffer and attributes
         const buffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-
         const aPosition = gl.getAttribLocation(program, 'aPosition');
+        const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
         gl.enableVertexAttribArray(aPosition);
-        gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(aTexCoord);
 
-        // Draw the triangle
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        // Load emoji texture
+        function loadTexture(url) {
+            const tex = gl.createTexture();
+            const img = new window.Image();
+            img.crossOrigin = "anonymous";
+            img.onload = function() {
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                emojiTexture = tex;
+                textureLoaded = true;
+                console.log('Texture loaded successfully');
+            };
+            img.onerror = function() {
+                console.error('Failed to load texture image:', url);
+            };
+            img.src = url;
+        }
+        loadTexture(emojiUrl);
+
+        // Animation variables
+        let fingers = [];
+        let spawnInterval = 60; // frames between spawns
+        let frameCount = 0;
+        let speed = 0.01;
+        let minY = -1.2;
+        let maxY = 1.2;
+        let minX = -0.8;
+        let maxX = 0.8;
+
+        function spawnFinger() {
+            // Random X position for the center
+            const x = Math.random() * (maxX - minX) + minX;
+            fingers.push({ x: x, y: maxY });
+        }
+
+        function draw() {
+            frameCount++;
+            if (frameCount % spawnInterval === 0) {
+                spawnFinger();
+            }
+            for (let finger of fingers) {
+                finger.y -= speed;
+            }
+            fingers = fingers.filter(f => f.y > minY);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            if (textureLoaded) {
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, emojiTexture);
+                gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
+                for (let finger of fingers) {
+                    const verts = new Float32Array([
+                        finger.x-0.1, finger.y-0.1, 0, 0,
+                        finger.x+0.1, finger.y-0.1, 1, 0,
+                        finger.x+0.1, finger.y+0.1, 1, 1,
+                        finger.x-0.1, finger.y-0.1, 0, 0,
+                        finger.x+0.1, finger.y+0.1, 1, 1,
+                        finger.x-0.1, finger.y+0.1, 0, 1
+                    ]);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
+                    gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
+                    gl.drawArrays(gl.TRIANGLES, 0, 6);
+                }
+            } else {
+                // Fallback: draw colored quads so you see something even if texture fails
+                gl.useProgram(program);
+                for (let finger of fingers) {
+                    const verts = new Float32Array([
+                        finger.x-0.1, finger.y-0.1, 0, 0,
+                        finger.x+0.1, finger.y-0.1, 1, 0,
+                        finger.x+0.1, finger.y+0.1, 1, 1,
+                        finger.x-0.1, finger.y-0.1, 0, 0,
+                        finger.x+0.1, finger.y+0.1, 1, 1,
+                        finger.x-0.1, finger.y+0.1, 0, 1
+                    ]);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
+                    gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
+                    // Draw with a solid color (fallback)
+                    gl.clearColor(1.0, 0.0, 0.0, 1.0); // Red
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLES, 0, 6);
+                }
+            }
+            console.log('Drawing', fingers.length, 'fingers. Texture loaded:', textureLoaded);
+            requestAnimationFrame(draw);
+        }
+        draw();
     </script>
 </body>
 </html>
