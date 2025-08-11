@@ -146,13 +146,14 @@
                 gl.bindTexture(gl.TEXTURE_2D, emojiTexture);
                 gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
                 for (let finger of fingers) {
+                    // Flip the v texture coordinate to reverse the image vertically
                     const verts = new Float32Array([
-                        finger.x-0.1, finger.y-0.1, 0, 0,
-                        finger.x+0.1, finger.y-0.1, 1, 0,
-                        finger.x+0.1, finger.y+0.1, 1, 1,
-                        finger.x-0.1, finger.y-0.1, 0, 0,
-                        finger.x+0.1, finger.y+0.1, 1, 1,
-                        finger.x-0.1, finger.y+0.1, 0, 1
+                        finger.x-0.1, finger.y-0.1, 0, 1, // v=1 (was 0)
+                        finger.x+0.1, finger.y-0.1, 1, 1, // v=1 (was 0)
+                        finger.x+0.1, finger.y+0.1, 1, 0, // v=0 (was 1)
+                        finger.x-0.1, finger.y-0.1, 0, 1, // v=1 (was 0)
+                        finger.x+0.1, finger.y+0.1, 1, 0, // v=0 (was 1)
+                        finger.x-0.1, finger.y+0.1, 0, 0  // v=0 (was 1)
                     ]);
                     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
                     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
