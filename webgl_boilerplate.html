@@ -225,8 +225,45 @@
         });
 
         let score = 0;
+        let gameOver = false;
 
         function draw() {
+            if (gameOver) {
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                // Show Game Over overlay div
+                let gameOverDiv = document.getElementById('gameOverDiv');
+                if (!gameOverDiv) {
+                    gameOverDiv = document.createElement('div');
+                    gameOverDiv.id = 'gameOverDiv';
+                    gameOverDiv.style.position = 'absolute';
+                    gameOverDiv.style.left = '0';
+                    gameOverDiv.style.top = '0';
+                    gameOverDiv.style.width = '100vw';
+                    gameOverDiv.style.height = '100vh';
+                    gameOverDiv.style.display = 'flex';
+                    gameOverDiv.style.flexDirection = 'column';
+                    gameOverDiv.style.justifyContent = 'center';
+                    gameOverDiv.style.alignItems = 'center';
+                    gameOverDiv.style.background = 'rgba(0,0,0,0.7)';
+                    gameOverDiv.style.color = '#fff';
+                    gameOverDiv.style.font = 'bold 48px Arial, sans-serif';
+                    gameOverDiv.style.zIndex = 100;
+                    document.body.appendChild(gameOverDiv);
+                }
+                gameOverDiv.innerHTML = `<div>Game Over!</div><div style="font-size:32px;margin-top:20px;">Final Score: ${score}</div>`;
+                gameOverDiv.style.display = 'flex';
+                // Hide score overlay
+                let scoreDiv = document.getElementById('scoreDiv');
+                if (scoreDiv) scoreDiv.style.display = 'none';
+                return;
+            } else {
+                // Hide Game Over overlay if present
+                let gameOverDiv = document.getElementById('gameOverDiv');
+                if (gameOverDiv) gameOverDiv.style.display = 'none';
+                // Show score overlay if present
+                let scoreDiv = document.getElementById('scoreDiv');
+                if (scoreDiv) scoreDiv.style.display = 'block';
+            }
             frameCount++;
             if (frameCount % spawnInterval === 0) {
                 spawnFinger();
@@ -237,8 +274,9 @@
             // Collision detection and scoring
             const fingerHalfWidth = 0.07;
             const fingerHalfHeight = 0.07;
+            let missed = false;
             fingers = fingers.filter(f => {
-                // AABB collision
+                // AABB collision (full overlap required)
                 const fingerLeft = f.x - fingerHalfWidth;
                 const fingerRight = f.x + fingerHalfWidth;
                 const fingerTop = f.y + fingerHalfHeight;
@@ -247,17 +285,26 @@
                 const bucketRight = bucketX + bucketWidth/2;
                 const bucketTop = bucketY + bucketHeight/2;
                 const bucketBottom = bucketY - bucketHeight/2;
-                const overlap =
-                    fingerRight > bucketLeft &&
-                    fingerLeft < bucketRight &&
-                    fingerTop > bucketBottom &&
-                    fingerBottom < bucketTop;
-                if (overlap) {
+                // Full overlap: finger must be entirely inside bucket
+                const fullyInside =
+                    fingerLeft >= bucketLeft &&
+                    fingerRight <= bucketRight &&
+                    fingerTop <= bucketTop &&
+                    fingerBottom >= bucketBottom;
+                if (fullyInside) {
                     score++;
                     return false; // Remove finger
                 }
-                return f.y > minY;
+                // If finger falls below minY, it's missed
+                if (f.y <= minY) {
+                    missed = true;
+                    return false;
+                }
+                return true;
             });
+            if (missed) {
+                gameOver = true;
+            }
             gl.clear(gl.COLOR_BUFFER_BIT);
             // Draw fingers (emojis) with texture
             gl.useProgram(program);
