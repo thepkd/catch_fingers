@@ -24,10 +24,13 @@
         gl.clearColor(0.1, 0.1, 0.1, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // Texture image URL (local file)
+        // Texture image URLs (local files)
         const emojiUrl = "middle-finger.png";
+        const bucketUrl = "bucket.png";
         let emojiTexture = null;
         let textureLoaded = false;
+        let bucketTexture = null;
+        let bucketTextureLoaded = false;
 
         // Vertex shader for textured quad
         const vertexShaderSource = `
@@ -93,7 +96,7 @@
         gl.enableVertexAttribArray(aTexCoord);
 
         // Load emoji texture
-        function loadTexture(url) {
+        function loadTexture(url, onLoad) {
             const tex = gl.createTexture();
             const img = new window.Image();
             img.crossOrigin = "anonymous";
@@ -104,16 +107,15 @@
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                emojiTexture = tex;
-                textureLoaded = true;
-                console.log('Texture loaded successfully');
+                onLoad(tex);
             };
             img.onerror = function() {
                 console.error('Failed to load texture image:', url);
             };
             img.src = url;
         }
-        loadTexture(emojiUrl);
+        loadTexture(emojiUrl, function(tex) { emojiTexture = tex; textureLoaded = true; });
+        loadTexture(bucketUrl, function(tex) { bucketTexture = tex; bucketTextureLoaded = true; });
 
         // Animation variables
         let fingers = [];
@@ -136,6 +138,94 @@
             fingers.push({ x: x, y: maxY });
         }
 
+        // Bucket variables
+        const bucketWidth = 0.25; // a bit bigger than emoji (0.2)
+        const bucketHeight = 0.25; // increased vertical size
+        let bucketX = 0; // Centered
+        const bucketY = -1 + bucketHeight / 2 + 0.05; // Slightly above bottom
+
+        // Draw bucket as a textured quad
+        function drawBucket() {
+            if (bucketTextureLoaded) {
+                gl.useProgram(program);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, bucketTexture);
+                gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
+                // Texture quad for bucket
+                const verts = new Float32Array([
+                    bucketX - bucketWidth/2, bucketY - bucketHeight/2, 0, 1,
+                    bucketX + bucketWidth/2, bucketY - bucketHeight/2, 1, 1,
+                    bucketX + bucketWidth/2, bucketY + bucketHeight/2, 1, 0,
+                    bucketX - bucketWidth/2, bucketY - bucketHeight/2, 0, 1,
+                    bucketX + bucketWidth/2, bucketY + bucketHeight/2, 1, 0,
+                    bucketX - bucketWidth/2, bucketY + bucketHeight/2, 0, 0
+                ]);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
+                gl.enableVertexAttribArray(aPosition);
+                gl.enableVertexAttribArray(aTexCoord);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            } else {
+                // fallback: white rectangle
+                gl.useProgram(colorProgram);
+                const verts = new Float32Array([
+                    bucketX - bucketWidth/2, bucketY - bucketHeight/2,
+                    bucketX + bucketWidth/2, bucketY - bucketHeight/2,
+                    bucketX + bucketWidth/2, bucketY + bucketHeight/2,
+                    bucketX - bucketWidth/2, bucketY - bucketHeight/2,
+                    bucketX + bucketWidth/2, bucketY + bucketHeight/2,
+                    bucketX - bucketWidth/2, bucketY + bucketHeight/2
+                ]);
+                gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                gl.vertexAttribPointer(colorPos, 2, gl.FLOAT, false, 8, 0);
+                gl.enableVertexAttribArray(colorPos);
+                gl.uniform4f(colorUniform, 1, 1, 1, 1);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+        }
+
+        // Add color shader for bucket
+        const colorVertexShaderSource = `
+            attribute vec2 aPosition;
+            void main() {
+                gl_Position = vec4(aPosition, 0.0, 1.0);
+            }
+        `;
+        const colorFragmentShaderSource = `
+            precision mediump float;
+            uniform vec4 uColor;
+            void main() {
+                gl_FragColor = uColor;
+            }
+        `;
+        function createColorProgram() {
+            const vs = createShader(gl, gl.VERTEX_SHADER, colorVertexShaderSource);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, colorFragmentShaderSource);
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            return prog;
+        }
+        const colorProgram = createColorProgram();
+        const colorPos = gl.getAttribLocation(colorProgram, 'aPosition');
+        const colorUniform = gl.getUniformLocation(colorProgram, 'uColor');
+        const colorBuffer = gl.createBuffer();
+
+        // Add mouse movement to control bucket
+        canvas.addEventListener('mousemove', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            // Clamp bucket to stay fully on screen
+            const half = bucketWidth/2;
+            bucketX = Math.max(-1 + half, Math.min(1 - half, x));
+        });
+
+        let score = 0;
+
         function draw() {
             frameCount++;
             if (frameCount % spawnInterval === 0) {
@@ -144,39 +234,66 @@
             for (let finger of fingers) {
                 finger.y -= speed;
             }
-            fingers = fingers.filter(f => f.y > minY);
+            // Collision detection and scoring
+            const fingerHalfWidth = 0.07;
+            const fingerHalfHeight = 0.07;
+            fingers = fingers.filter(f => {
+                // AABB collision
+                const fingerLeft = f.x - fingerHalfWidth;
+                const fingerRight = f.x + fingerHalfWidth;
+                const fingerTop = f.y + fingerHalfHeight;
+                const fingerBottom = f.y - fingerHalfHeight;
+                const bucketLeft = bucketX - bucketWidth/2;
+                const bucketRight = bucketX + bucketWidth/2;
+                const bucketTop = bucketY + bucketHeight/2;
+                const bucketBottom = bucketY - bucketHeight/2;
+                const overlap =
+                    fingerRight > bucketLeft &&
+                    fingerLeft < bucketRight &&
+                    fingerTop > bucketBottom &&
+                    fingerBottom < bucketTop;
+                if (overlap) {
+                    score++;
+                    return false; // Remove finger
+                }
+                return f.y > minY;
+            });
             gl.clear(gl.COLOR_BUFFER_BIT);
+            // Draw fingers (emojis) with texture
+            gl.useProgram(program);
             if (textureLoaded) {
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, emojiTexture);
                 gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
                 for (let finger of fingers) {
                     let verts;
+                    const fingerHalfWidth = 0.07; // reduced from 0.1
+                    const fingerHalfHeight = 0.07; // reduced from 0.1
                     if (flipTexture) {
-                        // v=0 at bottom, v=1 at top
                         verts = new Float32Array([
-                            finger.x-0.1, finger.y-0.1, 0, 0,
-                            finger.x+0.1, finger.y-0.1, 1, 0,
-                            finger.x+0.1, finger.y+0.1, 1, 1,
-                            finger.x-0.1, finger.y-0.1, 0, 0,
-                            finger.x+0.1, finger.y+0.1, 1, 1,
-                            finger.x-0.1, finger.y+0.1, 0, 1
+                            finger.x-fingerHalfWidth, finger.y-fingerHalfHeight, 0, 0,
+                            finger.x+fingerHalfWidth, finger.y-fingerHalfHeight, 1, 0,
+                            finger.x+fingerHalfWidth, finger.y+fingerHalfHeight, 1, 1,
+                            finger.x-fingerHalfWidth, finger.y-fingerHalfHeight, 0, 0,
+                            finger.x+fingerHalfWidth, finger.y+fingerHalfHeight, 1, 1,
+                            finger.x-fingerHalfWidth, finger.y+fingerHalfHeight, 0, 1
                         ]);
                     } else {
-                        // v=1 at bottom, v=0 at top
                         verts = new Float32Array([
-                            finger.x-0.1, finger.y-0.1, 0, 1,
-                            finger.x+0.1, finger.y-0.1, 1, 1,
-                            finger.x+0.1, finger.y+0.1, 1, 0,
-                            finger.x-0.1, finger.y-0.1, 0, 1,
-                            finger.x+0.1, finger.y+0.1, 1, 0,
-                            finger.x-0.1, finger.y+0.1, 0, 0
+                            finger.x-fingerHalfWidth, finger.y-fingerHalfHeight, 0, 1,
+                            finger.x+fingerHalfWidth, finger.y-fingerHalfHeight, 1, 1,
+                            finger.x+fingerHalfWidth, finger.y+fingerHalfHeight, 1, 0,
+                            finger.x-fingerHalfWidth, finger.y-fingerHalfHeight, 0, 1,
+                            finger.x+fingerHalfWidth, finger.y+fingerHalfHeight, 1, 0,
+                            finger.x-fingerHalfWidth, finger.y+fingerHalfHeight, 0, 0
                         ]);
                     }
                     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
                     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 16, 0);
                     gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 16, 8);
+                    gl.enableVertexAttribArray(aPosition);
+                    gl.enableVertexAttribArray(aTexCoord);
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
                 }
             } else {
@@ -201,6 +318,24 @@
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
                 }
             }
+            // Draw bucket after everything else
+            drawBucket();
+            // Draw scoreboard (after all WebGL drawing)
+            // Use a separate overlay canvas for 2D, or temporarily overlay a div
+            // Instead, use a simple HTML overlay for the score
+            let scoreDiv = document.getElementById('scoreDiv');
+            if (!scoreDiv) {
+                scoreDiv = document.createElement('div');
+                scoreDiv.id = 'scoreDiv';
+                scoreDiv.style.position = 'absolute';
+                scoreDiv.style.left = '20px';
+                scoreDiv.style.top = '10px';
+                scoreDiv.style.color = '#fff';
+                scoreDiv.style.font = '28px Arial, sans-serif';
+                scoreDiv.style.zIndex = 10;
+                document.body.appendChild(scoreDiv);
+            }
+            scoreDiv.textContent = 'Score: ' + score;
             console.log('Drawing', fingers.length, 'fingers. Texture loaded:', textureLoaded);
             requestAnimationFrame(draw);
         }
