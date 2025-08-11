@@ -121,7 +121,9 @@
         let fingers = [];
         let spawnInterval = 60; // frames between spawns
         let frameCount = 0;
-        let speed = 0.01;
+        let speed = 0.007;
+        let speedIncrease = 0.00001; // Speed up per frame
+        let maxSpeed = 0.05; // Cap the speed
         let minY = -1.2;
         let maxY = 1.2;
         let minX = -0.8;
@@ -267,6 +269,10 @@
             frameCount++;
             if (frameCount % spawnInterval === 0) {
                 spawnFinger();
+            }
+            // Gradually increase speed, capped at maxSpeed
+            if (!gameOver && speed < maxSpeed) {
+                speed = Math.min(maxSpeed, speed + speedIncrease);
             }
             for (let finger of fingers) {
                 finger.y -= speed;
